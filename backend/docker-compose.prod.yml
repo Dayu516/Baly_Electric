@@ -1,0 +1,57 @@
+services:
+  app:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - backups:/backups
+      - storage:/app/storage
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: pgvector/pgvector:pg16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ottimo}
+      POSTGRES_USER: ${DB_USER:-ottimo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ottimo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    # 不對外開放 5432
+
+  backup-cron:
+    build: .
+    command: >
+      sh -c "
+        echo '0 3 * * * cd /app && python -m infrastructure.backup.backup_service' > /etc/crontabs/root &&
+        crond -f
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - backups:/backups
+    restart: always
+
+volumes:
+  pgdata:
+  backups:
+  storage:

@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.whl
+
+# Test / Cache
+.pytest_cache/
+.import_linter_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Database
+*.db
+*.sqlite3
+
+# Credentials
+credentials.json
+*.pem
+*.key
+
+# Data / media files
+*.dat
+*.jpg
+*.jpeg
+*.csv
+!frontend/web/**/*.png
+
+# Root non-code files
+/API.txt
+/跨裝置功能分級與開放策略.md
+/電控材料行_數位化路線圖_v5.md
+/電控材料行數位化_專案需求.md
+
+# Tools output
+tools/data-cleaner/output_test/

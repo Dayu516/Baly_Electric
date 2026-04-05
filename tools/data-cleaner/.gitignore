@@ -1,0 +1,6 @@
+.env
+.venv/
+output/
+input/*.csv
+__pycache__/
+.cleaner_progress.json

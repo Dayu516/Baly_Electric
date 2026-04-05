@@ -1,0 +1,70 @@
+[importlinter]
+root_packages =
+    core
+    domain
+    application
+    infrastructure
+    api
+include_external_packages = True
+
+[importlinter:contract:1]
+name = Core 不可依賴任何業務層或外部層
+type = forbidden
+source_modules =
+    core
+forbidden_modules =
+    domain
+    infrastructure
+    application
+    api
+
+[importlinter:contract:2]
+name = Domain 不可依賴任何外部層（只能用 core）
+type = forbidden
+source_modules =
+    domain
+forbidden_modules =
+    infrastructure
+    application
+    api
+
+[importlinter:contract:3]
+name = Domain 不可依賴外部套件
+type = forbidden
+source_modules =
+    domain
+forbidden_modules =
+    sqlalchemy
+    fastapi
+    openai
+    anthropic
+    redis
+    celery
+    httpx
+
+[importlinter:contract:4]
+name = API 層不可直接使用 Infrastructure
+type = forbidden
+source_modules =
+    api
+forbidden_modules =
+    infrastructure
+
+[importlinter:contract:5]
+name = Application 不可直接使用 AI 套件
+type = forbidden
+source_modules =
+    application
+forbidden_modules =
+    openai
+    anthropic
+    langchain
+
+[importlinter:contract:6]
+name = Infrastructure 不可反向依賴上層
+type = forbidden
+source_modules =
+    infrastructure
+forbidden_modules =
+    application
+    api

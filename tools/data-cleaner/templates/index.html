@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Cleaner — 凌越資料清洗</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; font-size: 13px; }
+.container { max-width: 1700px; margin: 0 auto; padding: 12px; }
+h1 { font-size: 20px; margin-bottom: 8px; }
+h1 span { color: #888; font-weight: normal; font-size: 13px; }
+.card { background: white; border-radius: 10px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.btn { padding: 6px 14px; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 600; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: #1565C0; color: white; }
+.btn-success { background: #2E7D32; color: white; }
+.btn-danger { background: #C62828; color: white; }
+.btn-warning { background: #E65100; color: white; }
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: #f0f0f0; text-align: left; padding: 7px 5px; border-bottom: 2px solid #ddd; position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap; }
+th:hover { background: #e0e0e0; }
+th .sort-arrow { font-size: 10px; margin-left: 2px; color: #999; }
+th .sort-arrow.active { color: #1565C0; }
+td { padding: 5px; border-bottom: 1px solid #eee; vertical-align: top; }
+tr:hover { background: #f8f8f8; }
+tr.selected { background: #E3F2FD !important; }
+.badge { display: inline-block; padding: 2px 7px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+.badge-auto { background: #C8E6C9; color: #2E7D32; }
+.badge-review { background: #FFF9C4; color: #F57F17; }
+.badge-manual { background: #FFCDD2; color: #C62828; }
+.tabs { display: flex; gap: 3px; margin-bottom: 10px; }
+.tab { padding: 7px 14px; border: none; background: #e0e0e0; border-radius: 5px 5px 0 0; cursor: pointer; font-size: 12px; font-weight: 600; }
+.tab.active { background: white; }
+.stats { display: flex; gap: 16px; margin: 10px 0; align-items: center; }
+.stat { text-align: center; }
+.stat-num { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 11px; color: #888; }
+.toolbar { display: flex; gap: 5px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.hidden { display: none; }
+select, input[type="text"], input[type="number"] { padding: 4px 7px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+td input[type="text"] { width: 100%; border: 1px solid transparent; padding: 2px 3px; background: transparent; font-size: 12px; }
+td input[type="text"]:focus { border-color: #1565C0; background: white; outline: none; }
+td select { width: 100%; border: 1px solid transparent; background: transparent; font-size: 12px; }
+td select:focus { border-color: #1565C0; background: white; }
+input[type="checkbox"] { cursor: pointer; }
+.pagination { margin: 6px 0; color: #888; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.pagination button { margin: 0 2px; }
+.search-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.search-bar input[type="text"] { width: 200px; padding: 6px 10px; }
+.search-bar select { padding: 6px 8px; }
+/* 審查進度條 */
+.review-progress { margin: 8px 0; }
+.review-progress-bar { width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; position: relative; }
+.review-progress-fill { height: 100%; border-radius: 10px; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600; }
+.review-progress-auto { background: #4CAF50; }
+.review-progress-review { background: #FFC107; position: absolute; top: 0; }
+/* 匯入區塊 */
+.import-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+.import-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.import-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; }
+.import-card h4 { margin-bottom: 8px; font-size: 14px; }
+.import-stat { font-size: 13px; margin: 4px 0; color: #555; }
+.import-stat b { color: #333; }
+.import-result { margin-top: 8px; padding: 8px; border-radius: 6px; font-size: 12px; }
+.import-result.success { background: #E8F5E9; color: #2E7D32; }
+.import-result.error { background: #FFEBEE; color: #C62828; }
+/* 快捷鍵提示 */
+.shortcuts-hint { font-size: 11px; color: #aaa; margin-left: auto; }
+.shortcuts-hint kbd { background: #eee; padding: 1px 5px; border-radius: 3px; border: 1px solid #ccc; font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Data Cleaner <span>凌越資料清洗 v3 (SQLite)</span></h1>
+
+<!-- Step 1: Upload / Load -->
+<div id="step-upload" class="card">
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <input type="file" id="fileInput" accept=".csv" onchange="uploadFile(this)">
+    <button class="btn btn-success" onclick="loadData()">載入資料庫</button>
+    <span id="uploadStatus" style="color:#888;"></span>
+  </div>
+</div>
+
+<!-- Main Tabs -->
+<div id="mainContent" class="hidden">
+  <div class="tabs" style="margin-bottom:0;">
+    <button class="tab active" onclick="switchMainTab('products', this)" id="mainTab-products">品項審查</button>
+    <button class="tab" onclick="switchMainTab('customers', this)" id="mainTab-customers">客戶</button>
+    <button class="tab" onclick="switchMainTab('import', this)" id="mainTab-import">匯入主系統</button>
+  </div>
+
+  <!-- ═══ 品項審查 ═══ -->
+  <div id="panel-products" class="card" style="border-radius: 0 10px 10px 10px;">
+    <div class="stats">
+      <div class="stat"><div class="stat-num" id="statAuto" style="color:#2E7D32;">0</div><div class="stat-label">Auto</div></div>
+      <div class="stat"><div class="stat-num" id="statReview" style="color:#F57F17;">0</div><div class="stat-label">Review</div></div>
+      <div class="stat"><div class="stat-num" id="statManual" style="color:#C62828;">0</div><div class="stat-label">Manual</div></div>
+      <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">總計</div></div>
+      <div class="stat"><div class="stat-num" id="statConfirmed" style="color:#1565C0;">0</div><div class="stat-label">已確認</div></div>
+    </div>
+
+    <!-- 審查進度 -->
+    <div class="review-progress">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:2px;">
+        <span>審查進度</span>
+        <span id="reviewProgressText">0%</span>
+      </div>
+      <div class="review-progress-bar">
+        <div id="reviewProgressFill" class="review-progress-fill review-progress-auto" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- 搜尋 + 篩選 -->
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="搜尋品名、品牌、型號、規格..." onkeydown="if(event.key==='Enter')doSearch()">
+      <button class="btn btn-primary btn-sm" onclick="doSearch()">搜尋</button>
+      <select id="filterBrand" onchange="doSearch()">
+        <option value="">所有品牌</option>
+      </select>
+      <select id="filterCategory" onchange="doSearch()">
+        <option value="">所有分類</option>
+      </select>
+      <select id="filterItemType" onchange="doSearch()">
+        <option value="">所有型態</option>
+        <option value="finished">finished</option>
+        <option value="assembly">assembly</option>
+        <option value="accessory">accessory</option>
+        <option value="component">component</option>
+      </select>
+      <button class="btn btn-sm" onclick="clearFilters()" style="background:#e0e0e0;">清除篩選</button>
+      <span class="shortcuts-hint">
+        <kbd>N</kbd> 下一筆待審 &nbsp;<kbd>S</kbd> 搜尋 &nbsp;<kbd>1-4</kbd> 切 Tab
+      </span>
+    </div>
+
+    <!-- Bucket tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchBucket('all', this)" id="bucketTab-all">全部</button>
+      <button class="tab" onclick="switchBucket('auto', this)" id="bucketTab-auto">Auto</button>
+      <button class="tab" onclick="switchBucket('review', this)" id="bucketTab-review">Review</button>
+      <button class="tab" onclick="switchBucket('manual', this)" id="bucketTab-manual">Manual</button>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)"> <label for="selectAll" style="font-size:11px;">全選</label>
+      <span style="color:#888; font-size:11px;" id="selectedCount">已選 0 筆</span>
+      <span style="color:#ccc;">|</span>
+      <label style="font-size:11px;">品牌:</label>
+      <select id="batchBrand" style="width:110px;"><option value="">--</option></select>
+      <label style="font-size:11px;">分類:</label>
+      <select id="batchCategory" style="width:160px;"><option value="">--</option></select>
+      <button class="btn btn-primary btn-sm" onclick="batchUpdate()">套用</button>
+      <button class="btn btn-success btn-sm" onclick="batchConfirm()">批次確認</button>
+      <button class="btn btn-danger btn-sm" onclick="batchDelete()">批次刪除</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-primary btn-sm" onclick="exportCSV('auto')">匯出 Auto</button>
+      <button class="btn btn-primary btn-sm" onclick="exportCSV('all')">匯出全部</button>
+      <button class="btn btn-primary btn-sm" onclick="exportAliases()">匯出別名</button>
+    </div>
+
+    <div id="pagination" class="pagination"></div>
+    <div style="max-height: 58vh; overflow-y: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:26px; cursor:default;"><input type="checkbox" onchange="toggleSelectAll(this.checked)"></th>
+            <th style="width:26px; cursor:default;">#</th>
+            <th style="width:50px" onclick="toggleSort('bucket')">桶 <span class="sort-arrow" id="sort-bucket"></span></th>
+            <th style="width:35px" onclick="toggleSort('confidence')">信心 <span class="sort-arrow" id="sort-confidence"></span></th>
+            <th style="min-width:160px" onclick="toggleSort('name')">品名 <span class="sort-arrow" id="sort-name"></span></th>
+            <th style="width:100px">原始品名</th>
+            <th style="width:85px" onclick="toggleSort('brand')">品牌 <span class="sort-arrow" id="sort-brand"></span></th>
+            <th style="width:60px">系列</th>
+            <th style="width:150px" onclick="toggleSort('category_path')">分類路徑 <span class="sort-arrow" id="sort-category_path"></span></th>
+            <th style="width:60px">規格</th>
+            <th style="width:60px" onclick="toggleSort('item_type')">型態 <span class="sort-arrow" id="sort-item_type"></span></th>
+            <th style="width:100px">結構屬性</th>
+            <th style="width:80px">備註</th>
+            <th style="width:50px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ 客戶 ═══ -->
+  <div id="panel-customers" class="card hidden" style="border-radius: 0 10px 10px 10px;">
+    <div class="search-bar">
+      <input type="text" id="custSearchInput" placeholder="搜尋客戶名稱、電話、地址..." onkeydown="if(event.key==='Enter')loadCustomers(1)">
+      <button class="btn btn-primary btn-sm" onclick="loadCustomers(1)">搜尋</button>
+    </div>
+    <div id="custPagination" class="pagination"></div>
+    <div style="max-height: 60vh; overflow-y: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>名稱</th><th>簡稱</th><th>類型</th><th>電話</th><th>手機</th><th>地址</th><th>統編</th><th>付款</th>
+          </tr>
+        </thead>
+        <tbody id="custTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ 匯入主系統 ═══ -->
+  <div id="panel-import" class="card hidden" style="border-radius: 0 10px 10px 10px;">
+    <h3 style="margin-bottom:12px;">匯入到主系統 (localhost:8000)</h3>
+    <div class="import-grid">
+      <!-- 品項匯入 -->
+      <div class="import-card">
+        <h4>品項匯入</h4>
+        <div id="importProductPreview">
+          <button class="btn btn-primary" onclick="previewImport('products')">檢查可匯入品項</button>
+        </div>
+        <div id="importProductStats" class="hidden">
+          <div class="import-stat">可匯入 (Auto + 未匯入)：<b id="ipReady">0</b> 筆</div>
+          <div class="import-stat">已匯入：<b id="ipImported">0</b> 筆</div>
+          <div class="import-stat">Review 待審：<b id="ipReview">0</b> 筆</div>
+          <div class="import-stat">Manual 待處理：<b id="ipManual">0</b> 筆</div>
+          <div style="margin-top:10px; display:flex; gap:6px;">
+            <button class="btn btn-success" onclick="doImport('products', 'auto')" id="btnImportProducts">匯入 Auto 品項</button>
+          </div>
+        </div>
+        <div id="importProductResult" class="hidden"></div>
+      </div>
+
+      <!-- 客戶匯入 -->
+      <div class="import-card">
+        <h4>客戶匯入</h4>
+        <div id="importCustomerPreview">
+          <button class="btn btn-primary" onclick="previewImport('customers')">檢查可匯入客戶</button>
+        </div>
+        <div id="importCustomerStats" class="hidden">
+          <div class="import-stat">可匯入：<b id="icReady">0</b> 筆</div>
+          <div class="import-stat">已匯入：<b id="icImported">0</b> 筆</div>
+          <div style="margin-top:10px;">
+            <button class="btn btn-success" onclick="doImport('customers')" id="btnImportCustomers">匯入客戶</button>
+          </div>
+        </div>
+        <div id="importCustomerResult" class="hidden"></div>
+      </div>
+
+      <!-- 別名匯入 -->
+      <div class="import-card">
+        <h4>別名匯入</h4>
+        <p style="color:#888; font-size:12px;">將品項別名匯入主系統的 product_aliases 表</p>
+        <div style="margin-top:10px;">
+          <button class="btn btn-warning" onclick="doImportAliases()" id="btnImportAliases">匯入別名</button>
+        </div>
+        <div id="importAliasResult" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ── 狀態 ──────────────────────────────────────────────
+let allItems = [];
+let currentBucket = 'all';
+let currentPage = 1;
+let totalPages = 1;
+let selectedIds = new Set();
+let brands = [];
+let flatCategories = [];
+let sortBy = 'id';
+let sortDir = 'asc';
+let searchQuery = '';
+let filterBrand = '';
+let filterCategory = '';
+let filterItemType = '';
+
+// ── 初始化 ────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('uploadStatus').textContent = '載入中...';
+  // 嘗試直接從 SQLite 讀取
+  const res = await fetch('/api/stats');
+  const stats = await res.json();
+  if (stats.total > 0) {
+    showMain(stats);
+  } else {
+    // DB 空的，嘗試載入 CSV
+    const r = await fetch('/api/load-results', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    showMain(d);
+  }
+  loadBrands();
+  loadCategories();
+  document.getElementById('uploadStatus').textContent = '';
+}
+
+async function uploadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  document.getElementById('uploadStatus').textContent = '上傳中...';
+  const res = await fetch('/api/upload', { method: 'POST', body: form });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('uploadStatus').textContent = `${data.total} 筆已上傳`;
+}
+
+function showMain(stats) {
+  document.getElementById('mainContent').classList.remove('hidden');
+  updateStats(stats);
+  loadItems('all', 1);
+}
+
+function updateStats(stats) {
+  document.getElementById('statAuto').textContent = stats.auto || 0;
+  document.getElementById('statReview').textContent = stats.review || 0;
+  document.getElementById('statManual').textContent = stats.manual || 0;
+  document.getElementById('statTotal').textContent = stats.total || 0;
+  document.getElementById('statConfirmed').textContent = stats.confirmed || 0;
+  // 審查進度
+  const total = stats.total || 1;
+  const autoConfirmed = (stats.auto || 0) + (stats.confirmed || 0);
+  const pct = Math.round((stats.auto || 0) / total * 100);
+  document.getElementById('reviewProgressFill').style.width = pct + '%';
+  document.getElementById('reviewProgressFill').textContent = pct + '%';
+  document.getElementById('reviewProgressText').textContent = `${stats.auto || 0} / ${total} (${pct}%)`;
+}
+
+// ── 品牌 / 分類載入 ──────────────────────────────────
+async function loadBrands() {
+  const res = await fetch('/api/brands');
+  const data = await res.json();
+  brands = data.brands || [];
+  const batchOpts = '<option value="">--</option>' + brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  document.getElementById('batchBrand').innerHTML = batchOpts;
+  const filterOpts = '<option value="">所有品牌</option>' + brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  document.getElementById('filterBrand').innerHTML = filterOpts;
+}
+
+async function loadCategories() {
+  // 用標準分類路徑清單
+  const res = await fetch('/api/category-paths');
+  const data = await res.json();
+  const paths = data.paths || [];
+  flatCategories = paths.map(p => ({ name: p }));
+  // 如果沒有標準清單，用本地已有的
+  if (flatCategories.length === 0) {
+    const r2 = await fetch('/api/categories-local');
+    const d2 = await r2.json();
+    flatCategories = (d2.categories || []).map(c => ({ name: c }));
+  }
+  const batchOpts = '<option value="">--</option>' + flatCategories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+  document.getElementById('batchCategory').innerHTML = batchOpts;
+  const filterOpts = '<option value="">所有分類</option>' + flatCategories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+  document.getElementById('filterCategory').innerHTML = filterOpts;
+}
+
+// ── 資料載入 ──────────────────────────────────────────
+async function loadItems(bucket, page) {
+  currentBucket = bucket || currentBucket;
+  currentPage = page || 1;
+  selectedIds.clear();
+  updateSelectedCount();
+
+  const params = new URLSearchParams({
+    bucket: currentBucket, page: currentPage, per_page: 50,
+    search: searchQuery, brand: filterBrand, category: filterCategory,
+    item_type: filterItemType, sort_by: sortBy, sort_dir: sortDir,
+  });
+  const res = await fetch(`/api/items?${params}`);
+  const data = await res.json();
+  allItems = data.items;
+  totalPages = data.total_pages || 1;
+  renderTable();
+  renderPagination(data.total);
+}
+
+// ── 搜尋 / 篩選 ─────────────────────────────────────
+function doSearch() {
+  searchQuery = document.getElementById('searchInput').value.trim();
+  filterBrand = document.getElementById('filterBrand').value;
+  filterCategory = document.getElementById('filterCategory').value;
+  filterItemType = document.getElementById('filterItemType').value;
+  loadItems(currentBucket, 1);
+}
+
+function clearFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterBrand').value = '';
+  document.getElementById('filterCategory').value = '';
+  document.getElementById('filterItemType').value = '';
+  searchQuery = ''; filterBrand = ''; filterCategory = ''; filterItemType = '';
+  loadItems(currentBucket, 1);
+}
+
+// ── 排序 ─────────────────────────────────────────────
+function toggleSort(col) {
+  if (sortBy === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortBy = col;
+    sortDir = 'asc';
+  }
+  updateSortArrows();
+  loadItems(currentBucket, 1);
+}
+
+function updateSortArrows() {
+  document.querySelectorAll('.sort-arrow').forEach(el => {
+    el.textContent = '';
+    el.classList.remove('active');
+  });
+  const arrow = document.getElementById(`sort-${sortBy}`);
+  if (arrow) {
+    arrow.textContent = sortDir === 'asc' ? '\u25B2' : '\u25BC';
+    arrow.classList.add('active');
+  }
+}
+
+// ── 表格渲染 ─────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  allItems.forEach((item, localIdx) => {
+    const id = item.id;
+    const checked = selectedIds.has(id) ? 'checked' : '';
+    const bucketClass = `badge-${item.bucket || 'manual'}`;
+    const conf = parseFloat(item.confidence || 0);
+    const confPct = (conf * 100).toFixed(0);
+    const confColor = conf >= 0.85 ? '#2E7D32' : conf >= 0.6 ? '#F57F17' : '#C62828';
+
+    const brandOpts = brands.map(b => `<option value="${esc(b)}" ${item.brand === b ? 'selected' : ''}>${esc(b)}</option>`).join('');
+    const catPath = item.category_path || item.category || '';
+    const catOpts = flatCategories.map(c => `<option value="${esc(c.name)}" ${catPath === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const itemType = item.item_type || 'finished';
+    const attrsStr = item.structured_attrs || '{}';
+    const attrsShort = attrsStr.length > 2 ? formatAttrs(attrsStr) : '';
+    const remark = item.parse_remark || '';
+
+    tbody.innerHTML += `<tr class="${checked ? 'selected' : ''}" id="row-${id}">
+      <td><input type="checkbox" ${checked} onchange="toggleSelect(${id}, this.checked)"></td>
+      <td style="color:#aaa;">${(currentPage-1)*50 + localIdx + 1}</td>
+      <td><span class="badge ${bucketClass}">${item.bucket || '?'}</span></td>
+      <td style="font-weight:600; color:${confColor};">${confPct}%</td>
+      <td><input type="text" value="${esc(item.name)}" onchange="updateField(${id}, 'name', this.value)"></td>
+      <td style="color:#999; font-size:11px;" title="${esc(item.raw_name)}">${truncate(item.raw_name, 14)}</td>
+      <td><select onchange="updateField(${id}, 'brand', this.value)">
+        <option value="">--</option>${brandOpts}
+      </select></td>
+      <td><input type="text" value="${esc(item.series)}" onchange="updateField(${id}, 'series', this.value)" style="width:55px;"></td>
+      <td><select onchange="updateField(${id}, 'category_path', this.value)">
+        <option value="">--</option>${catOpts}
+      </select></td>
+      <td><input type="text" value="${esc(item.spec)}" onchange="updateField(${id}, 'spec', this.value)" style="width:55px;"></td>
+      <td><select onchange="updateField(${id}, 'item_type', this.value)" style="font-size:11px;">
+        <option value="finished" ${itemType==='finished'?'selected':''}>finished</option>
+        <option value="assembly" ${itemType==='assembly'?'selected':''}>assembly</option>
+        <option value="accessory" ${itemType==='accessory'?'selected':''}>accessory</option>
+        <option value="component" ${itemType==='component'?'selected':''}>component</option>
+      </select></td>
+      <td style="font-size:10px; max-width:100px; overflow:hidden; cursor:pointer;" title="${esc(attrsStr)}" onclick="editAttrs(${id})">${attrsShort || '<span style=&quot;color:#ccc;&quot;>-</span>'}</td>
+      <td><input type="text" value="${esc(remark)}" onchange="updateField(${id}, 'parse_remark', this.value)" style="width:70px; font-size:11px;" placeholder="-"></td>
+      <td>
+        ${item.bucket === 'auto' ? '<span style="color:#2E7D32;">&#10003;</span>' : `<button class="btn btn-success btn-sm" onclick="confirmItem(${id})" title="確認">&#10003;</button>`}
+        <button class="btn btn-danger btn-sm" onclick="deleteItem(${id})" title="刪除">&#10005;</button>
+      </td>
+    </tr>`;
+  });
+}
+
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function truncate(s, n) { s = s || ''; return s.length > n ? s.substring(0, n) + '\u2026' : s; }
+
+function formatAttrs(jsonStr) {
+  try {
+    const obj = JSON.parse(jsonStr);
+    return Object.entries(obj).map(([k,v]) => `${k}:${v}`).join(', ');
+  } catch { return jsonStr; }
+}
+
+function editAttrs(id) {
+  const item = allItems.find(i => i.id === id);
+  if (!item) return;
+  const current = item.structured_attrs || '{}';
+  const newVal = prompt('編輯結構化屬性 (JSON):', current);
+  if (newVal === null || newVal === current) return;
+  try { JSON.parse(newVal); } catch { alert('JSON 格式錯誤'); return; }
+  updateField(id, 'structured_attrs', newVal);
+  item.structured_attrs = newVal;
+  renderTable();
+}
+
+// ── 欄位操作 ─────────────────────────────────────────
+async function updateField(id, field, value) {
+  await fetch(`/api/items/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ [field]: value }),
+  });
+}
+
+async function confirmItem(id) {
+  // 立即視覺回饋
+  const btn = document.querySelector(`#row-${id} .btn-success`);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  // 本地更新（不等 API）
+  const item = allItems.find(i => i.id === id);
+  if (item) { item.bucket = 'auto'; item.confirmed = 1; }
+  const row = document.getElementById(`row-${id}`);
+  if (row) {
+    const badge = row.querySelector('.badge');
+    if (badge) { badge.className = 'badge badge-auto'; badge.textContent = 'auto'; }
+    if (btn) { btn.textContent = '\u2713'; btn.style.opacity = '0.4'; }
+  }
+  // 背景送 API
+  fetch(`/api/items/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ confirmed: true }),
+  }).then(() => refreshStats());
+}
+
+async function deleteItem(id) {
+  if (!confirm('確定刪除？')) return;
+  // 立即從畫面移除
+  const row = document.getElementById(`row-${id}`);
+  if (row) row.remove();
+  allItems = allItems.filter(i => i.id !== id);
+  // 背景送 API
+  fetch(`/api/items/${id}`, { method: 'DELETE' }).then(() => refreshStats());
+}
+
+// ── 選擇 ─────────────────────────────────────────────
+function toggleSelect(id, checked) {
+  if (checked) selectedIds.add(id); else selectedIds.delete(id);
+  updateSelectedCount();
+  const row = document.getElementById(`row-${id}`);
+  if (row) row.className = checked ? 'selected' : '';
+}
+
+function toggleSelectAll(checked) {
+  allItems.forEach(item => {
+    if (checked) selectedIds.add(item.id); else selectedIds.delete(item.id);
+  });
+  updateSelectedCount();
+  renderTable();
+}
+
+function updateSelectedCount() {
+  document.getElementById('selectedCount').textContent = `已選 ${selectedIds.size} 筆`;
+}
+
+// ── 批次操作 ─────────────────────────────────────────
+async function batchUpdate() {
+  if (selectedIds.size === 0) { alert('請先勾選品項'); return; }
+  const updates = {};
+  const brand = document.getElementById('batchBrand').value;
+  const category = document.getElementById('batchCategory').value;
+  if (brand) updates.brand = brand;
+  if (category) updates.category_path = category;
+  if (Object.keys(updates).length === 0) { alert('請選擇品牌或分類'); return; }
+  await fetch('/api/batch-update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ids: [...selectedIds], updates }),
+  });
+  loadItems(currentBucket, currentPage);
+  refreshStats();
+}
+
+async function batchConfirm() {
+  if (selectedIds.size === 0) { alert('請先勾選品項'); return; }
+  const count = selectedIds.size;
+  // 立即視覺回饋
+  selectedIds.forEach(id => {
+    const row = document.getElementById(`row-${id}`);
+    if (row) {
+      const badge = row.querySelector('.badge');
+      if (badge) { badge.className = 'badge badge-auto'; badge.textContent = 'auto'; }
+      row.style.opacity = '0.6';
+    }
+  });
+  await fetch('/api/batch-update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ids: [...selectedIds], updates: { bucket: 'auto', confirmed: 1 } }),
+  });
+  selectedIds.clear();
+  updateSelectedCount();
+  refreshStats();
+  loadItems(currentBucket, currentPage);
+}
+
+async function batchDelete() {
+  if (selectedIds.size === 0) { alert('請先勾選品項'); return; }
+  if (!confirm(`確定刪除 ${selectedIds.size} 筆？`)) return;
+  await fetch('/api/batch-delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ids: [...selectedIds] }),
+  });
+  selectedIds.clear();
+  loadItems(currentBucket, currentPage);
+  refreshStats();
+}
+
+// ── 分頁 / Tab ───────────────────────────────────────
+function renderPagination(total) {
+  const el = document.getElementById('pagination');
+  let html = `<span>第 ${currentPage}/${totalPages} 頁 (${total} 筆)</span> `;
+  if (currentPage > 1) html += `<button class="btn btn-sm" onclick="loadItems(null, ${currentPage-1})">上一頁</button>`;
+  // 頁碼按鈕
+  const startP = Math.max(1, currentPage - 3);
+  const endP = Math.min(totalPages, currentPage + 3);
+  for (let p = startP; p <= endP; p++) {
+    html += `<button class="btn btn-sm" style="${p===currentPage?'background:#1565C0;color:white;':'background:#e0e0e0;'}" onclick="loadItems(null, ${p})">${p}</button>`;
+  }
+  if (currentPage < totalPages) html += `<button class="btn btn-sm" onclick="loadItems(null, ${currentPage+1})">下一頁</button>`;
+  el.innerHTML = html;
+}
+
+function switchBucket(bucket, el) {
+  document.querySelectorAll('#panel-products .tabs .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  loadItems(bucket, 1);
+}
+
+function switchMainTab(tab, el) {
+  document.querySelectorAll('.container > .tabs > .tab, #mainContent > .tabs > .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['products', 'customers', 'import'].forEach(t => {
+    document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'customers') loadCustomers(1);
+}
+
+async function refreshStats() {
+  const res = await fetch('/api/stats');
+  const stats = await res.json();
+  updateStats(stats);
+}
+
+// ── 匯出 ─────────────────────────────────────────────
+function exportCSV(bucket) { window.open(`/api/export?bucket=${bucket}`); }
+function exportAliases() { window.open('/api/export-aliases'); }
+
+// ── 客戶 ─────────────────────────────────────────────
+let custPage = 1;
+async function loadCustomers(page) {
+  custPage = page || 1;
+  const search = document.getElementById('custSearchInput').value.trim();
+  const res = await fetch(`/api/customers?page=${custPage}&per_page=50&search=${encodeURIComponent(search)}`);
+  const data = await res.json();
+  const tbody = document.getElementById('custTableBody');
+  tbody.innerHTML = '';
+  data.items.forEach((c, i) => {
+    tbody.innerHTML += `<tr>
+      <td style="color:#aaa;">${(custPage-1)*50+i+1}</td>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.short_name)}</td>
+      <td>${esc(c.customer_type)}</td>
+      <td>${esc(c.phone)}</td>
+      <td>${esc(c.mobile)}</td>
+      <td style="font-size:11px;">${esc(c.address)}</td>
+      <td>${esc(c.unino)}</td>
+      <td>${esc(c.payment_terms)}</td>
+    </tr>`;
+  });
+  const el = document.getElementById('custPagination');
+  const tp = data.total_pages || 1;
+  el.innerHTML = `<span>${data.total} 筆，第 ${custPage}/${tp} 頁</span>
+    ${custPage > 1 ? `<button class="btn btn-sm" onclick="loadCustomers(${custPage-1})">上一頁</button>` : ''}
+    ${custPage < tp ? `<button class="btn btn-sm" onclick="loadCustomers(${custPage+1})">下一頁</button>` : ''}`;
+}
+
+// ── Phase 3: 匯入主系統 ─────────────────────────────
+async function previewImport(target) {
+  const res = await fetch(`/api/import-preview?target=${target}`);
+  const data = await res.json();
+  if (target === 'products') {
+    document.getElementById('ipReady').textContent = data.ready;
+    document.getElementById('ipImported').textContent = data.already_imported;
+    document.getElementById('ipReview').textContent = data.review_pending;
+    document.getElementById('ipManual').textContent = data.manual_pending;
+    document.getElementById('importProductStats').classList.remove('hidden');
+    document.getElementById('btnImportProducts').disabled = data.ready === 0;
+  } else if (target === 'customers') {
+    document.getElementById('icReady').textContent = data.ready;
+    document.getElementById('icImported').textContent = data.already_imported;
+    document.getElementById('importCustomerStats').classList.remove('hidden');
+    document.getElementById('btnImportCustomers').disabled = data.ready === 0;
+  }
+}
+
+async function doImport(target, bucket) {
+  const btn = target === 'products' ? document.getElementById('btnImportProducts') : document.getElementById('btnImportCustomers');
+  const resultDiv = document.getElementById(target === 'products' ? 'importProductResult' : 'importCustomerResult');
+  btn.disabled = true;
+  btn.textContent = '匯入中...';
+
+  try {
+    const res = await fetch('/api/import-to-main', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ target, bucket: bucket || 'auto' }),
+    });
+    const data = await res.json();
+    resultDiv.classList.remove('hidden');
+    if (data.ok || data.imported > 0) {
+      resultDiv.className = 'import-result success';
+      resultDiv.innerHTML = `成功匯入 <b>${data.imported}</b> 筆` +
+        (data.skipped ? `，跳過 ${data.skipped} 筆重複` : '') +
+        (data.errors && data.errors.length > 0 ? `<br>錯誤: ${data.errors.slice(0,5).join(', ')}` : '');
+    } else {
+      resultDiv.className = 'import-result error';
+      resultDiv.textContent = data.error || data.message || '匯入失敗';
+    }
+  } catch (e) {
+    resultDiv.classList.remove('hidden');
+    resultDiv.className = 'import-result error';
+    resultDiv.textContent = '網路錯誤: ' + e.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = target === 'products' ? '匯入 Auto 品項' : '匯入客戶';
+  // 重新整理預覽
+  previewImport(target);
+}
+
+async function doImportAliases() {
+  const btn = document.getElementById('btnImportAliases');
+  const resultDiv = document.getElementById('importAliasResult');
+  btn.disabled = true;
+  btn.textContent = '匯入中...';
+
+  try {
+    const res = await fetch('/api/import-aliases', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    const data = await res.json();
+    resultDiv.classList.remove('hidden');
+    if (data.ok) {
+      resultDiv.className = 'import-result success';
+      resultDiv.textContent = `成功匯入 ${data.imported} 筆別名`;
+    } else {
+      resultDiv.className = 'import-result error';
+      resultDiv.textContent = data.error || '匯入失敗';
+    }
+  } catch (e) {
+    resultDiv.classList.remove('hidden');
+    resultDiv.className = 'import-result error';
+    resultDiv.textContent = '網路錯誤: ' + e.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '匯入別名';
+}
+
+// ── 鍵盤快捷鍵 ───────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  // 如果在 input/select 內就不觸發
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+  switch (e.key.toLowerCase()) {
+    case 'n': // 跳到下一筆待審（review tab, 第一頁）
+      e.preventDefault();
+      switchBucket('review', document.getElementById('bucketTab-review'));
+      break;
+    case 's': // 聚焦搜尋
+      e.preventDefault();
+      document.getElementById('searchInput').focus();
+      break;
+    case '1': switchBucket('all', document.getElementById('bucketTab-all')); break;
+    case '2': switchBucket('auto', document.getElementById('bucketTab-auto')); break;
+    case '3': switchBucket('review', document.getElementById('bucketTab-review')); break;
+    case '4': switchBucket('manual', document.getElementById('bucketTab-manual')); break;
+    case 'arrowleft':
+      if (currentPage > 1) loadItems(null, currentPage - 1);
+      break;
+    case 'arrowright':
+      if (currentPage < totalPages) loadItems(null, currentPage + 1);
+      break;
+  }
+});
+
+// ── 自動載入 ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  loadData();
+});
+</script>
+</body>
+</html>

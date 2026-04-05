@@ -1,0 +1,16 @@
+services:
+  test-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ottimo_test
+      POSTGRES_USER: ottimo
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ottimo"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
