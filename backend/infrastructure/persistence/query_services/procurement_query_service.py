@@ -86,6 +86,15 @@ class ProcurementQueryService(BaseQueryService):
         rows = self._session.execute(sql, {"po_id": po_id}).mappings().all()
         return [dict(r) for r in rows]
 
+    def get_po_line_quantities_by_line(self, po_id: str) -> list[dict]:
+        """含 po_line_id 的版本（over-receive 檢查用）。"""
+        sql = text("""
+            SELECT po_line_id, ordered_quantity, received_quantity
+            FROM purchase_order_lines WHERE po_id = :po_id
+        """)
+        rows = self._session.execute(sql, {"po_id": po_id}).mappings().all()
+        return [dict(r) for r in rows]
+
     # ── 詢價單查詢 ───────────────────────────────────
     def list_inquiries(self, *, status: str | None = None, keyword: str | None = None,
                          date_from: str | None = None, date_to: str | None = None,

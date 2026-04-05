@@ -404,3 +404,18 @@ class ProductQueryService(BaseQueryService):
         sql = text(f"SELECT COUNT(*) FROM products WHERE category_id IN ({placeholders}) AND is_active = true")
         return self._session.execute(sql).scalar() or 0
 
+    def find_existing_sku(self, name: str, spec: str | None, brand: str | None) -> dict | None:
+        """跨批次去重：以 product.name + sku.spec + sku.brand 查找既有 SKU。"""
+        sql = text("""
+            SELECT s.sku_id, s.product_id, s.sell_price, s.item_type, p.name
+            FROM skus s
+            JOIN products p ON p.product_id = s.product_id
+            WHERE p.name = :name
+              AND COALESCE(s.spec, '') = COALESCE(:spec, '')
+              AND COALESCE(s.brand, '') = COALESCE(:brand, '')
+              AND s.is_active = true
+            LIMIT 1
+        """)
+        row = self._session.execute(sql, {"name": name, "spec": spec, "brand": brand}).mappings().first()
+        return dict(row) if row else None
+

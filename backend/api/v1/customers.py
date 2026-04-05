@@ -6,13 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from application.customer import build_generate_statement_service, build_payment_service
+from application.customer import build_customer_repository
+from application.support import build_audit_service
 from core.dependencies import CurrentUser, require_role
 from core.errors import ERR_BIZ_002, ERR_BIZ_004
 from database import get_session
 from domain.customer.models import Customer
-from application.customer import build_customer_repository
-from application.support import build_audit_service
 
 router = APIRouter()
 
@@ -175,14 +174,13 @@ def generate_statement(
     session: Session = Depends(get_session),
     user: CurrentUser = Depends(require_role(["manager", "owner"])),
 ):
-    service = build_generate_statement_service(session)
-    result = service.generate(body.customer_id, body.period, generated_by=user.user_id)
+    from application.use_cases import build_generate_statement_use_case
+    use_case = build_generate_statement_use_case(session)
+    result = use_case.execute(body.customer_id, body.period, generated_by=user.user_id)
 
     if not result.success:
         raise HTTPException(status_code=400, detail={"code": result.code, "message": result.message})
 
-    build_audit_service(session).log(user.user_id, "generate_statement", "accounts_receivable", detail=result.data)
-    session.commit()
     return {"success": True, "code": "OK", "message": result.message, "data": result.data}
 
 
@@ -192,15 +190,11 @@ def record_payment(
     session: Session = Depends(get_session),
     user: CurrentUser = Depends(require_role(["manager", "owner"])),
 ):
-    service = build_payment_service(session)
-    result = service.record_payment(ar_id, body.amount)
+    from application.use_cases import build_record_payment_use_case
+    use_case = build_record_payment_use_case(session)
+    result = use_case.execute(ar_id, body.amount, user.user_id)
 
     if not result.success:
         raise HTTPException(status_code=404, detail={"code": result.code, "message": result.message})
 
-    build_audit_service(session).log(
-        user.user_id, "record_payment", "accounts_receivable", entity_id=ar_id,
-        detail={"amount": body.amount, "new_paid": result.data["paid_amount"]},
-    )
-    session.commit()
     return {"success": True, "message": result.message}

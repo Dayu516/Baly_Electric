@@ -50,6 +50,7 @@ class ReceivePOLine(BaseModel):
 class ReceivePORequest(BaseModel):
     lines: list[ReceivePOLine]
     note: str | None = None
+    idempotency_key: str | None = None
 
 
 # ── Helper ─────────────────────────────────────────────
@@ -164,16 +165,19 @@ def receive_purchase_order(
     user: CurrentUser = Depends(require_role(["manager", "owner"])),
     session: Session = Depends(get_session),
 ):
-    svc = _build_service(session)
+    from application.use_cases import build_receive_po_use_case
+    use_case = build_receive_po_use_case(session)
+
     lines = [l.model_dump() for l in body.lines]
-    result = svc.receive_order(po_id, lines, body.note, user.user_id)
-    if result.success:
-        build_audit_service(session).log(
-            user.user_id, "receive_po", "purchase_order", entity_id=po_id,
-            detail=result.data,
+    result = use_case.execute(
+        po_id, lines, body.note, user.user_id,
+        idempotency_key=body.idempotency_key,
+    )
+    if not result.success:
+        raise HTTPException(
+            status_code=400, detail={"code": result.code, "message": result.message},
         )
-        session.commit()
-    return _to_response(result)
+    return {"success": True, "data": result.data, "message": result.message}
 
 
 @router.delete("/{po_id}")

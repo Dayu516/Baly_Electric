@@ -134,3 +134,109 @@ class TestImportItemType:
 
         saved_sku = mocks["sku_repo"].save.call_args[0][0]
         assert saved_sku.item_type == "finished"
+
+
+class TestUpsertExisting:
+    def test_barcode_hit_updates_safe_fields(self):
+        """既有 SKU（barcode 命中） → 安全欄位自動更新。"""
+        svc, mocks = _make_service()
+        existing_sku = SKU(
+            sku_id=uuid.uuid4(), product_id=uuid.uuid4(),
+            brand="士林", spec="2P", sell_price=100, cost_price=60,
+            supplier_code="OLD", item_type="finished",
+        )
+        mocks["sku_repo"].get_by_barcode.return_value = existing_sku
+        mocks["sku_repo"].save.return_value = existing_sku
+
+        csv = """品名,規格,廠牌,條碼,售價,成本,供應商料號
+開關,2P,士林,BC001,150,70,NEW_CODE
+"""
+        result = svc.import_csv(csv, uuid.uuid4())
+
+        assert result.data["updated"] == 1
+        # 安全欄位已更新
+        saved = mocks["sku_repo"].save.call_args[0][0]
+        assert saved.cost_price == 70
+        assert saved.supplier_code == "NEW_CODE"
+
+    def test_sell_price_change_goes_to_review(self):
+        """售價變更不直接寫，記到 review_changes。"""
+        svc, mocks = _make_service()
+        existing_sku = SKU(
+            sku_id=uuid.uuid4(), product_id=uuid.uuid4(),
+            sell_price=100, cost_price=60, item_type="finished",
+        )
+        mocks["sku_repo"].get_by_barcode.return_value = existing_sku
+        mocks["sku_repo"].save.return_value = existing_sku
+
+        csv = """品名,規格,廠牌,條碼,售價,成本
+開關,2P,士林,BC001,200,70
+"""
+        result = svc.import_csv(csv, uuid.uuid4())
+
+        assert len(result.data["review_changes"]) >= 1
+        change = result.data["review_changes"][0]
+        assert change["field"] == "sell_price"
+        assert change["old"] == 100
+        assert change["new"] == 200
+
+    def test_item_type_change_goes_to_review(self):
+        svc, mocks = _make_service()
+        existing_sku = SKU(
+            sku_id=uuid.uuid4(), product_id=uuid.uuid4(),
+            sell_price=100, item_type="finished",
+        )
+        mocks["sku_repo"].get_by_barcode.return_value = existing_sku
+        mocks["sku_repo"].save.return_value = existing_sku
+
+        csv = """品名,規格,廠牌,條碼,售價,品項型態
+開關,2P,士林,BC001,100,assembly
+"""
+        result = svc.import_csv(csv, uuid.uuid4())
+
+        changes = [c for c in result.data["review_changes"] if c["field"] == "item_type"]
+        assert len(changes) == 1
+        assert changes[0]["new"] == "assembly"
+
+
+class TestBatchId:
+    def test_batch_id_written_to_product_and_sku(self):
+        svc, mocks = _make_service()
+        mocks["product_repo"].save.side_effect = lambda p: p
+        mocks["sku_repo"].save.return_value = SKU()
+        mocks["sku_repo"].get_by_barcode.return_value = None
+
+        batch_id = uuid.uuid4()
+        svc.import_csv(SIMPLE_CSV, uuid.uuid4(), batch_id=batch_id)
+
+        saved_product = mocks["product_repo"].save.call_args[0][0]
+        assert saved_product.source_batch_id == batch_id
+
+        saved_sku = mocks["sku_repo"].save.call_args[0][0]
+        assert saved_sku.source_batch_id == batch_id
+
+
+class TestCrossBatchDedup:
+    def test_db_level_dedup(self):
+        """跨批次：name+spec+brand 命中 DB → upsert，不建新 SKU。"""
+        product_query = MagicMock()
+        product_query.find_existing_sku.return_value = {
+            "sku_id": uuid.uuid4(), "product_id": uuid.uuid4(),
+            "sell_price": 100, "item_type": "finished", "name": "無熔絲開關",
+        }
+
+        svc, mocks = _make_service(product_query=product_query)
+        existing_sku = SKU(
+            sku_id=uuid.uuid4(), product_id=uuid.uuid4(),
+            sell_price=100, cost_price=60, item_type="finished",
+        )
+        mocks["sku_repo"].get_by_id.return_value = existing_sku
+        mocks["sku_repo"].get_by_barcode.return_value = None
+        mocks["sku_repo"].save.return_value = existing_sku
+
+        result = svc.import_csv(SIMPLE_CSV, uuid.uuid4())
+
+        # 不應該建新 Product
+        mocks["product_repo"].save.assert_not_called()
+        # 應該 upsert 既有 SKU
+        assert result.data["updated"] == 1 or result.data["skipped_duplicate"] == 1

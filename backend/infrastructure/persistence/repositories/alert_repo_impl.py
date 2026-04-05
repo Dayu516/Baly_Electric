@@ -45,6 +45,19 @@ class SqlOperationalAlertRepository(OperationalAlertRepository):
             orm.is_read = True
             self._session.flush()
 
+    def list_active_by_reference(self, reference_type: str, reference_id: UUID, alert_type: str) -> list[OperationalAlert]:
+        orms = (
+            self._session.query(OperationalAlertORM)
+            .filter(
+                OperationalAlertORM.reference_type == reference_type,
+                OperationalAlertORM.reference_id == reference_id,
+                OperationalAlertORM.alert_type == alert_type,
+                OperationalAlertORM.is_read == False,  # noqa: E712
+            )
+            .all()
+        )
+        return [self._to_domain(o) for o in orms]
+
     @staticmethod
     def _to_domain(orm: OperationalAlertORM) -> OperationalAlert:
         return OperationalAlert(

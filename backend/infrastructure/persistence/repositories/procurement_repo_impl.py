@@ -152,6 +152,7 @@ class SqlPurchaseReceiptRepository(PurchaseReceiptRepository):
             supplier_id=receipt.supplier_id,
             received_by=receipt.received_by,
             note=receipt.note,
+            idempotency_key=receipt.idempotency_key,
         )
         self._session.add(orm)
         self._session.flush()
@@ -161,6 +162,21 @@ class SqlPurchaseReceiptRepository(PurchaseReceiptRepository):
             supplier_id=orm.supplier_id,
             received_by=orm.received_by,
             note=orm.note,
+            idempotency_key=orm.idempotency_key,
+        )
+
+    def find_by_idempotency_key(self, po_id: UUID, key: str) -> Optional[PurchaseReceipt]:
+        orm = (
+            self._session.query(PurchaseReceiptORM)
+            .filter(PurchaseReceiptORM.po_id == po_id, PurchaseReceiptORM.idempotency_key == key)
+            .first()
+        )
+        if not orm:
+            return None
+        return PurchaseReceipt(
+            receipt_id=orm.receipt_id, po_id=orm.po_id,
+            supplier_id=orm.supplier_id, received_by=orm.received_by,
+            note=orm.note, idempotency_key=orm.idempotency_key,
         )
 
 
@@ -179,6 +195,21 @@ class SqlPurchaseReceiptLineRepository(PurchaseReceiptLineRepository):
         self._session.add(orm)
         self._session.flush()
         return line
+
+    def list_by_receipt(self, receipt_id: UUID) -> list[PurchaseReceiptLine]:
+        orms = (
+            self._session.query(PurchaseReceiptLineORM)
+            .filter(PurchaseReceiptLineORM.receipt_id == receipt_id)
+            .all()
+        )
+        return [
+            PurchaseReceiptLine(
+                receipt_line_id=o.receipt_line_id, receipt_id=o.receipt_id,
+                sku_id=o.sku_id, quantity=o.quantity,
+                unit_cost=float(o.unit_cost) if o.unit_cost else None,
+            )
+            for o in orms
+        ]
 
 
 # ═══════════════════════════════════════════════════════════
