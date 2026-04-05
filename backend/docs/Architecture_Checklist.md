@@ -66,3 +66,4 @@
 - 掃描所有 `@router.post/put/delete` + `session.commit()` 的 route
 - 必須有 `build_audit_service` 呼叫
 - 豁免：`login`（非業務寫入）
+# CI first run trigger
