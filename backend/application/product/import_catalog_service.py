@@ -1,14 +1,17 @@
 """凌越資料匯入 — ImportCatalogService。
 
 職責：
-  1. 讀取 CSV/Excel
+  1. 讀取 CSV
   2. 格式清理（全半形統一、去空白、欄位正規化）
-  3. 去重偵測（同品名+同規格 = 疑似重複）
-  4. 拆 Product / SKU
-  5. category_path 解析 → 對應 category_id
-  6. item_type 傳遞到 SKU
-  7. structured_attrs → 批次寫入 product_attributes
-  8. 匯入結果建立 ReviewTask（product_confirm）
+  3. 去重偵測（批次內 + 跨批次 DB 級）
+  4. 新 SKU → INSERT，既有 SKU → upsert（安全欄位自動更新）
+  5. sell_price / name / item_type 變更 → 不直接寫，記到 review changes
+  6. category_path 解析 → 對應 category_id
+  7. item_type 傳遞到 SKU
+  8. structured_attrs → 批次寫入 product_attributes
+  9. 回傳 ImportResult（含 review_changes）
+
+注意：此 service 不做 audit / commit（由 use case 層負責）。
 """
 
 import csv
@@ -16,6 +19,7 @@ import io
 import json
 import uuid
 from dataclasses import dataclass, field
+from uuid import UUID
 
 from core.logging import get_logger
 from core.results import Result
@@ -28,34 +32,43 @@ logger = get_logger("import_catalog")
 
 VALID_ITEM_TYPES = {"finished", "assembly", "accessory", "component"}
 
+# 可自動更新的欄位（不需 review）
+AUTO_UPDATE_FIELDS = {"cost_price", "supplier_code", "internal_code", "min_stock",
+                      "raw_name", "series", "model_number"}
+
+# 需要 review 才能更新的欄位
+REVIEW_REQUIRED_FIELDS = {"sell_price", "name", "item_type"}
+
 
 @dataclass
 class ImportRow:
     """匯入檔的單行資料。支援 data-cleaner 清洗後的標準 CSV。"""
-    name: str = ""                          # 標準化品名（清洗後）
-    raw_name: str | None = None             # 原始品名（保留底）
+    name: str = ""
+    raw_name: str | None = None
     brand: str | None = None
-    series: str | None = None               # 系列
+    series: str | None = None
     model_number: str | None = None
     category_name: str | None = None
-    category_path: str | None = None        # 分類路徑（如「接觸器類>裸接觸器」）
+    category_path: str | None = None
     spec: str | None = None
     barcode: str | None = None
-    supplier_code: str | None = None        # 供應商料號
-    internal_code: str | None = None        # 凌越原始編號
+    supplier_code: str | None = None
+    internal_code: str | None = None
     unit: str = "個"
     sell_price: float = 0
     cost_price: float | None = None
     min_stock: int | None = None
-    item_type: str = "finished"             # finished/assembly/accessory/component
-    structured_attrs: dict | None = None    # {"線圈電壓":"AC220V","框架型號":"S-P11"}
+    item_type: str = "finished"
+    structured_attrs: dict | None = None
 
 
 @dataclass
 class ImportResult:
     total_rows: int = 0
     imported: int = 0
+    updated: int = 0
     skipped_duplicate: int = 0
+    review_changes: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -66,39 +79,46 @@ class ImportCatalogService:
         sku_repo: SKURepository,
         review_repo: ReviewTaskRepository,
         category_repo: CategoryRepository | None = None,
-        attribute_writer=None,  # AttributeQueryService instance
+        attribute_writer=None,
+        product_query=None,  # ProductQueryService for cross-batch dedup
     ):
         self._product_repo = product_repo
         self._sku_repo = sku_repo
         self._review_repo = review_repo
         self._category_repo = category_repo
         self._attr_writer = attribute_writer
-        self._category_cache: dict[str, uuid.UUID | None] = {}  # path → category_id
+        self._product_query = product_query
+        self._category_cache: dict[str, uuid.UUID | None] = {}
 
-    def import_csv(self, csv_content: str, created_by: uuid.UUID) -> Result:
-        """從 CSV 字串匯入品項。"""
+    def import_csv(self, csv_content: str, created_by: uuid.UUID, batch_id: uuid.UUID | None = None) -> Result:
+        """從 CSV 字串匯入品項。batch_id 由 use case 提供。"""
         rows = self._parse_csv(csv_content)
         if not rows:
             return Result.fail("ERR-BIZ-001", "CSV 無有效資料")
 
-        result = self._process_rows(rows, created_by)
+        result = self._process_rows(rows, created_by, batch_id)
 
         logger.info(
             "import_completed",
             total=result.total_rows,
             imported=result.imported,
+            updated=result.updated,
             skipped=result.skipped_duplicate,
+            review_changes=len(result.review_changes),
             errors=len(result.errors),
         )
 
         return Result.ok(
             data={
+                "import_batch_id": str(batch_id) if batch_id else None,
                 "total_rows": result.total_rows,
                 "imported": result.imported,
+                "updated": result.updated,
                 "skipped_duplicate": result.skipped_duplicate,
-                "errors": result.errors[:20],  # 最多回傳 20 筆錯誤
+                "review_changes": result.review_changes[:20],
+                "errors": result.errors[:20],
             },
-            message=f"匯入完成：{result.imported}/{result.total_rows} 筆成功",
+            message=f"匯入完成：新增 {result.imported} / 更新 {result.updated} / 跳過 {result.skipped_duplicate}",
         )
 
     def _parse_csv(self, csv_content: str) -> list[ImportRow]:
@@ -135,11 +155,8 @@ class ImportCatalogService:
 
         return rows
 
-    def _process_rows(self, rows: list[ImportRow], created_by: uuid.UUID) -> ImportResult:
+    def _process_rows(self, rows: list[ImportRow], created_by: uuid.UUID, batch_id: uuid.UUID | None) -> ImportResult:
         result = ImportResult(total_rows=len(rows))
-        # 去重追蹤：
-        #   product_key (name|spec) → product_id  — 同規格歸同一 Product
-        #   sku_key (name|spec|brand) → True       — 同品牌同規格跳過
         seen_products: dict[str, uuid.UUID] = {}
         seen_skus: set[str] = set()
 
@@ -148,7 +165,7 @@ class ImportCatalogService:
                 product_key = f"{row.name}|{row.spec or ''}"
                 sku_key = f"{row.name}|{row.spec or ''}|{row.brand or ''}"
 
-                # SKU 層級去重：name + spec + brand 完全相同 → 跳過
+                # 批次內去重
                 if sku_key in seen_skus:
                     result.skipped_duplicate += 1
                     continue
@@ -158,14 +175,22 @@ class ImportCatalogService:
                 if row.barcode:
                     existing_sku = self._sku_repo.get_by_barcode(row.barcode)
                     if existing_sku:
-                        result.skipped_duplicate += 1
-                        result.errors.append(f"第 {i+1} 行：條碼 {row.barcode} 已存在，跳過")
+                        # 既有 SKU（by barcode） → upsert
+                        self._upsert_existing_sku(existing_sku, row, result, i)
                         continue
 
-                # 解析分類路徑 → category_id
+                # 跨批次 DB 級去重（name + spec + brand）
+                if self._product_query:
+                    existing = self._product_query.find_existing_sku(row.name, row.spec, row.brand)
+                    if existing:
+                        sku = self._sku_repo.get_by_id(existing["sku_id"])
+                        if sku:
+                            self._upsert_existing_sku(sku, row, result, i)
+                            continue
+
+                # ── 新資料 INSERT ──────────────────────────
                 category_id = self._resolve_category(row.category_path, row.category_name)
 
-                # Product 層級：name + spec 相同 → 共用同一個 Product
                 if product_key in seen_products:
                     product_id = seen_products[product_key]
                 else:
@@ -175,12 +200,12 @@ class ImportCatalogService:
                         series=row.series,
                         model_number=row.model_number,
                         category_id=category_id,
+                        source_batch_id=batch_id,
                     )
                     saved_product = self._product_repo.save(product)
                     product_id = saved_product.product_id
                     seen_products[product_key] = product_id
 
-                # 建立 SKU（brand 在 SKU 層級，item_type 從 CSV 帶入）
                 sku = SKU(
                     product_id=product_id,
                     brand=row.brand,
@@ -193,14 +218,15 @@ class ImportCatalogService:
                     cost_price=row.cost_price,
                     min_stock=row.min_stock,
                     item_type=row.item_type,
+                    source_batch_id=batch_id,
                 )
                 self._sku_repo.save(sku)
 
-                # structured_attrs → 寫入 product_attributes
+                # structured_attrs
                 if row.structured_attrs and self._attr_writer:
                     self._write_product_attributes(product_id, row.structured_attrs)
 
-                # search_text 增強：brand + structured_attrs 值加入搜尋
+                # search_text 增強
                 if self._attr_writer:
                     extra = [row.brand]
                     if row.structured_attrs:
@@ -213,24 +239,73 @@ class ImportCatalogService:
                 result.errors.append(f"第 {i+1} 行「{row.name}」匯入失敗：{e}")
 
         # 建立 ReviewTask
-        if result.imported > 0:
+        if result.imported > 0 or result.updated > 0 or result.review_changes:
+            review_detail = f"新增 {result.imported} / 更新 {result.updated} / 跳過 {result.skipped_duplicate}"
+            if result.review_changes:
+                review_detail += f"\n\n需確認的變更（{len(result.review_changes)} 筆）：\n"
+                for ch in result.review_changes[:10]:
+                    review_detail += f"  SKU {ch['sku_id']}: {ch['field']} {ch['old']} → {ch['new']}\n"
+
             review = ReviewTask(
                 review_type="product_confirm",
-                title=f"凌越匯入 {result.imported} 筆品項待確認",
-                detail=f"總共 {result.total_rows} 筆，匯入 {result.imported} 筆，重複跳過 {result.skipped_duplicate} 筆",
+                title=f"匯入 {result.imported + result.updated} 筆品項待確認",
+                detail=review_detail,
+                reference_type="import_batch",
+                reference_id=batch_id,
             )
             self._review_repo.save(review)
 
         return result
 
+    def _upsert_existing_sku(self, sku: SKU, row: ImportRow, result: ImportResult, row_idx: int) -> None:
+        """更新既有 SKU：安全欄位自動更新，敏感欄位記到 review_changes。"""
+        changed = False
+
+        # 安全欄位自動更新
+        if row.cost_price is not None and row.cost_price != sku.cost_price:
+            sku.cost_price = row.cost_price
+            changed = True
+        if row.supplier_code and row.supplier_code != sku.supplier_code:
+            sku.supplier_code = row.supplier_code
+            changed = True
+        if row.internal_code and row.internal_code != sku.internal_code:
+            sku.internal_code = row.internal_code
+            changed = True
+        if row.min_stock is not None and row.min_stock != sku.min_stock:
+            sku.min_stock = row.min_stock
+            changed = True
+
+        # 敏感欄位 → 不直接寫，記到 review_changes
+        if row.sell_price and row.sell_price != sku.sell_price:
+            result.review_changes.append({
+                "sku_id": str(sku.sku_id),
+                "field": "sell_price",
+                "old": sku.sell_price,
+                "new": row.sell_price,
+                "row": row_idx + 1,
+            })
+        if row.item_type != sku.item_type:
+            result.review_changes.append({
+                "sku_id": str(sku.sku_id),
+                "field": "item_type",
+                "old": sku.item_type,
+                "new": row.item_type,
+                "row": row_idx + 1,
+            })
+
+        if changed:
+            self._sku_repo.save(sku)
+            result.updated += 1
+        else:
+            result.skipped_duplicate += 1
+
     @staticmethod
     def _clean(value: str | None) -> str | None:
         if value is None:
             return None
-        # 全形轉半形（常見字元）
         result = value.strip()
-        result = result.replace("\u3000", " ")  # 全形空白
-        result = result.replace("\uff0c", ",")  # 全形逗號
+        result = result.replace("\u3000", " ")
+        result = result.replace("\uff0c", ",")
         return result if result else None
 
     @staticmethod
@@ -269,55 +344,23 @@ class ImportCatalogService:
             return None
 
     def _resolve_category(self, category_path: str | None, category_name: str | None) -> uuid.UUID | None:
-        """解析分類路徑（如「接觸器類>裸接觸器」）→ category_id。
-
-        優先用 category_path，fallback 到 category_name（舊格式相容）。
-        """
         path = category_path or category_name
         if not path or not self._category_repo:
             return None
-
-        # 快取命中
         if path in self._category_cache:
             return self._category_cache[path]
-
-        # 懶載入全部分類（一次查完，不逐行查）
         if not self._category_cache:
             self._build_category_cache()
-
-        result = self._category_cache.get(path)
-        return result
+        return self._category_cache.get(path)
 
     def _build_category_cache(self) -> None:
-        """建立分類名稱 → category_id 的快取。
-
-        支援三種查詢格式：
-          1. 完整路徑：「接觸器類>裸接觸器」
-          2. 子分類名稱：「裸接觸器」
-          3. 大分類名稱：「接觸器類」
-        """
         all_cats = self._category_repo.list_all()
-        # name → Category
         by_id: dict[uuid.UUID, Category] = {c.category_id: c for c in all_cats}
-        by_name: dict[str, Category] = {}
-
         for cat in all_cats:
-            by_name[cat.name] = cat
-
-        for cat in all_cats:
-            # 建完整路徑：parent_name>child_name
             if cat.parent_id and cat.parent_id in by_id:
                 parent = by_id[cat.parent_id]
-                full_path = f"{parent.name}>{cat.name}"
-                self._category_cache[full_path] = cat.category_id
-
-            # 單名稱也能對應（子分類優先）
+                self._category_cache[f"{parent.name}>{cat.name}"] = cat.category_id
             self._category_cache[cat.name] = cat.category_id
 
     def _write_product_attributes(self, product_id: uuid.UUID, attrs: dict) -> None:
-        """將 structured_attrs dict 批次寫入 product_attributes 表。
-
-        使用 AttributeQueryService 做 SQL（遵守 QueryService 分域規則）。
-        重複 key 會覆蓋（先刪再寫）。
-        """
         self._attr_writer.bulk_insert_product_attributes(str(product_id), attrs)

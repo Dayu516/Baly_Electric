@@ -96,6 +96,7 @@ class ProductORM(Base, TimestampMixin, VersionMixin, AuditMixin):
     category_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    source_batch_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
 
 class SKUORM(Base, TimestampMixin, VersionMixin, AuditMixin):
@@ -114,6 +115,7 @@ class SKUORM(Base, TimestampMixin, VersionMixin, AuditMixin):
     min_stock: Mapped[int] = mapped_column(Integer, nullable=True)  # 安全庫存量
     item_type: Mapped[str] = mapped_column(String(20), nullable=False, default="finished")  # finished/assembly/accessory/component
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    source_batch_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
 
 class ProductBomORM(Base):
@@ -428,6 +430,7 @@ class PurchaseReceiptORM(Base, TimestampMixin):
     supplier_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     received_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class PurchaseReceiptLineORM(Base):

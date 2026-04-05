@@ -14,3 +14,6 @@ class ReviewTaskRepository(ABC):
 
     @abstractmethod
     def list_pending(self, review_type: str | None = None) -> list[ReviewTask]: ...
+
+    @abstractmethod
+    def find_by_reference(self, reference_type: str, reference_id: UUID) -> Optional[ReviewTask]: ...

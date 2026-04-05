@@ -70,6 +70,7 @@ class SqlProductRepository(ProductRepository):
             description=product.description,
             is_active=product.is_active,
             version=product.version,
+            source_batch_id=product.source_batch_id,
         )
         self._session.add(orm)
         self._session.flush()
@@ -164,6 +165,7 @@ class SqlSKURepository(SKURepository):
             cost_price=sku.cost_price,
             min_stock=sku.min_stock,
             item_type=sku.item_type,
+            source_batch_id=sku.source_batch_id,
             is_active=sku.is_active,
             version=sku.version,
         )

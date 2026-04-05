@@ -243,11 +243,13 @@ class PurchaseOrderService:
         if not lines:
             return Result.fail(ERR_BIZ_001, "至少需要一筆驗收明細")
 
+        idempotency_key = getattr(self, '_pending_idempotency_key', None)
         receipt = self._receipt_repo.save(PurchaseReceipt(
             po_id=po_id,
             supplier_id=po.supplier_id,
             received_by=user_id,
             note=note,
+            idempotency_key=idempotency_key,
         ))
 
         for line in lines:

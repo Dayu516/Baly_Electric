@@ -56,10 +56,16 @@ class PurchaseReceiptRepository(ABC):
     @abstractmethod
     def save(self, receipt: PurchaseReceipt) -> PurchaseReceipt: ...
 
+    @abstractmethod
+    def find_by_idempotency_key(self, po_id: UUID, key: str) -> Optional[PurchaseReceipt]: ...
+
 
 class PurchaseReceiptLineRepository(ABC):
     @abstractmethod
     def save(self, line: PurchaseReceiptLine) -> PurchaseReceiptLine: ...
+
+    @abstractmethod
+    def list_by_receipt(self, receipt_id: UUID) -> list[PurchaseReceiptLine]: ...
 
 
 class InquiryRepository(ABC):

@@ -111,6 +111,7 @@ class PurchaseReceipt:
     supplier_id: UUID = field(default_factory=uuid4)
     received_by: UUID = field(default_factory=uuid4)
     note: str | None = None
+    idempotency_key: str | None = None
 
 
 @dataclass

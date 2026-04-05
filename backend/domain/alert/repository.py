@@ -13,3 +13,8 @@ class OperationalAlertRepository(ABC):
 
     @abstractmethod
     def mark_read(self, alert_id: UUID) -> None: ...
+
+    @abstractmethod
+    def list_active_by_reference(self, reference_type: str, reference_id: UUID, alert_type: str) -> list[OperationalAlert]:
+        """查詢未讀的 active alert（同 reference + type）。"""
+        ...

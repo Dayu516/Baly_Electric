@@ -24,6 +24,7 @@ class Product:
     description: str | None = None
     is_active: bool = True
     version: int = 1
+    source_batch_id: UUID | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -44,6 +45,7 @@ class SKU:
     item_type: str = "finished"  # finished/assembly/accessory/component
     is_active: bool = True
     version: int = 1
+    source_batch_id: UUID | None = None
 
 
 @dataclass

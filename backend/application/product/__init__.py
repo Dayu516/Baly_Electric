@@ -52,6 +52,7 @@ def build_import_catalog_service(session: Session) -> ImportCatalogService:
         review_repo=SqlReviewTaskRepository(session),
         category_repo=SqlCategoryRepository(session),
         attribute_writer=AttributeQueryService(session),
+        product_query=ProductQueryService(session),
     )
 
 

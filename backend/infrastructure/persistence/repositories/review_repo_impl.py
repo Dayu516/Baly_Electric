@@ -50,6 +50,18 @@ class SqlReviewTaskRepository(ReviewTaskRepository):
         self._session.flush()
         return self._to_domain(orm)
 
+    def find_by_reference(self, reference_type: str, reference_id: UUID) -> Optional[ReviewTask]:
+        orm = (
+            self._session.query(ReviewTaskORM)
+            .filter(
+                ReviewTaskORM.reference_type == reference_type,
+                ReviewTaskORM.reference_id == reference_id,
+            )
+            .order_by(ReviewTaskORM.created_at.desc())
+            .first()
+        )
+        return self._to_domain(orm) if orm else None
+
     def list_pending(self, review_type: str | None = None) -> list[ReviewTask]:
         q = self._session.query(ReviewTaskORM).filter(ReviewTaskORM.status.in_(["pending", "claimed"]))
         if review_type:

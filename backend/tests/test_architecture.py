@@ -164,3 +164,39 @@ class TestWriteRoutesHaveAudit:
         assert violations == [], (
             f"以下寫入 route 缺少 audit（Constitution §8）：\n" + "\n".join(violations)
         )
+
+
+# ── 語意規則：Use Case 必須有 audit + commit ──────────────
+
+USE_CASE_DIR = BACKEND / "application" / "use_cases"
+
+
+class TestUseCaseHasAuditAndCommit:
+    """每個 use case 的 execute() 必須有 audit.log 和 session.commit。"""
+
+    def test_all_use_cases_have_audit(self):
+        violations = []
+
+        for py_file in USE_CASE_DIR.glob("*.py"):
+            if py_file.name == "__init__.py":
+                continue
+            try:
+                content = py_file.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, PermissionError):
+                continue
+
+            # 找所有 def execute 方法
+            if "def execute(" not in content:
+                continue
+
+            rel = py_file.relative_to(BACKEND)
+
+            if "self._audit.log(" not in content and "self._audit_service.log(" not in content:
+                violations.append(f"{rel} → execute() 缺少 audit.log")
+
+            if "self._session.commit()" not in content:
+                violations.append(f"{rel} → execute() 缺少 session.commit")
+
+        assert violations == [], (
+            f"Use case 必須有 audit + commit：\n" + "\n".join(violations)
+        )
